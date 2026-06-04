@@ -1,0 +1,21 @@
+services:
+  - type: worker
+    name: anime-finder-bot
+    runtime: image
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TMDB_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o
+    healthCheckPath: ""
+    autoDeploy: true
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 1
