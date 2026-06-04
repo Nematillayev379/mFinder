@@ -37,7 +37,7 @@ async def cmd_lang(message: Message):
     await message.answer("🌐 Tilni tanlang / Choose language:", reply_markup=keyboard)
 
 
-@router.callback_data(F.data.startswith("lang_"))
+@router.callback_query(F.data.startswith("lang_"))
 async def callback_lang(callback_query: CallbackQuery):
     lang_code = callback_query.data.replace("lang_", "")
     if lang_code not in VALID_LANGS:
