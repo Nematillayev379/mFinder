@@ -2,6 +2,7 @@ import asyncio
 import logging
 import signal
 import sys
+import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -36,6 +37,23 @@ async def run_health_server():
     return runner
 
 
+async def self_keep_alive():
+    """Har 14 minutda o'zini ping qiladi - Render uxlamasligi uchun"""
+    await asyncio.sleep(30)
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "http://localhost:10000/health",
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status == 200:
+                        logger.info("Self-ping OK (Render alive)")
+        except Exception as e:
+            logger.warning(f"Self-ping failed: {e}")
+        await asyncio.sleep(14 * 60)
+
+
 async def main():
     logger.info("Bot starting...")
 
@@ -54,12 +72,16 @@ async def main():
 
     health_runner = await run_health_server()
 
+    keep_alive_task = asyncio.create_task(self_keep_alive())
+    logger.info("Self-ping task started (every 14 min)")
+
     logger.info("Bot is running!")
 
     try:
         await dp.start_polling(bot)
     finally:
         logger.info("Bot shutting down...")
+        keep_alive_task.cancel()
         try:
             await bot.session.close()
         except Exception as e:
