@@ -7,12 +7,12 @@ services:
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
-      - key: OPENAI_API_KEY
+      - key: GROQ_API_KEY
         sync: false
       - key: TMDB_API_KEY
         sync: false
-      - key: OPENAI_MODEL
-        value: gpt-4o
+      - key: GROQ_MODEL
+        value: llama-3.2-90b-vision-preview
     healthCheckPath: ""
     autoDeploy: true
     disk:

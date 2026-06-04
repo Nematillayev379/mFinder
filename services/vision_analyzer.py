@@ -2,11 +2,15 @@ import json
 import logging
 import base64
 from openai import AsyncOpenAI
-from config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_TIMEOUT
+from config import GROQ_API_KEY, GROQ_MODEL
 
 logger = logging.getLogger(__name__)
 
-client = AsyncOpenAI(api_key=OPENAI_API_KEY, timeout=OPENAI_TIMEOUT)
+client = AsyncOpenAI(
+    api_key=GROQ_API_KEY,
+    base_url="https://api.groq.com/openai/v1",
+    timeout=60,
+)
 
 
 async def analyze_frames(frame_paths: list[str]) -> dict:
@@ -57,7 +61,7 @@ If unsure, make your best guess and explain why. Be specific about distinguishin
 
     try:
         response = await client.chat.completions.create(
-            model=OPENAI_MODEL,
+            model=GROQ_MODEL,
             messages=[
                 {
                     "role": "user",
@@ -87,5 +91,5 @@ If unsure, make your best guess and explain why. Be specific about distinguishin
         }
 
     except Exception as e:
-        logger.error(f"OpenAI API error: {e}")
+        logger.error(f"Groq API error: {e}")
         return {"type": "unknown", "title": "API error", "confidence": 0.0}

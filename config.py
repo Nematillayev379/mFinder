@@ -17,16 +17,16 @@ def require_env(key: str) -> str:
 
 
 TELEGRAM_BOT_TOKEN = require_env("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = require_env("OPENAI_API_KEY")
+GROQ_API_KEY = require_env("GROQ_API_KEY")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.2-90b-vision-preview")
 
 MAX_VIDEO_SIZE = 50 * 1024 * 1024
 MAX_FRAMES = 5
 FRAME_INTERVAL = 2
 FRAME_TIMEOUT = 30
 HTTP_TIMEOUT = 30
-OPENAI_TIMEOUT = 60
+GROQ_TIMEOUT = 60
 TEMP_DIR = "data/temp"
 CACHE_DB = "data/cache.db"
 CACHE_TTL = 86400
