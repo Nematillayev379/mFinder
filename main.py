@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import signal
 import sys
 import aiohttp
@@ -20,6 +21,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", "")
+RENDER_SERVICE_NAME = os.getenv("RENDER_SERVICE_NAME", "")
+
 
 async def health_handler(request):
     return web.Response(text="OK", status=200)
@@ -38,17 +42,26 @@ async def run_health_server():
 
 
 async def self_keep_alive():
-    """Har 14 minutda o'zini ping qiladi - Render uxlamasligi uchun"""
+    """Har 14 minutda o'zining tashqi URLiga ping - Render uxlamasligi uchun"""
     await asyncio.sleep(30)
+
+    if RENDER_EXTERNAL_URL:
+        ping_url = f"{RENDER_EXTERNAL_URL}/health"
+    elif RENDER_SERVICE_NAME:
+        ping_url = f"https://{RENDER_SERVICE_NAME}.onrender.com/health"
+    else:
+        ping_url = "http://localhost:10000/health"
+
+    logger.info(f"Keep-alive target: {ping_url}")
+
     while True:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    "http://localhost:10000/health",
+                    ping_url,
                     timeout=aiohttp.ClientTimeout(total=10),
                 ) as resp:
-                    if resp.status == 200:
-                        logger.info("Self-ping OK (Render alive)")
+                    logger.info(f"Self-ping {resp.status} (Render alive)")
         except Exception as e:
             logger.warning(f"Self-ping failed: {e}")
         await asyncio.sleep(14 * 60)
