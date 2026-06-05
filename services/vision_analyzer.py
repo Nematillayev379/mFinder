@@ -6,6 +6,19 @@ from config import GROQ_API_KEY, GROQ_MODEL
 
 logger = logging.getLogger(__name__)
 
+VISION_MODELS = [
+    "llama-3.2-90b-vision-preview",
+    "llama-3.2-11b-vision-preview",
+]
+
+if GROQ_MODEL not in VISION_MODELS:
+    logger.warning(
+        f"⚠️ {GROQ_MODEL} vision qo'llab-quvvatlamasligi mumkin! "
+        f"Tavsiya: {VISION_MODELS}"
+    )
+else:
+    logger.info(f"✅ Using vision model: {GROQ_MODEL}")
+
 client = AsyncOpenAI(
     api_key=GROQ_API_KEY,
     base_url="https://api.groq.com/openai/v1",
@@ -74,13 +87,24 @@ If unsure, make your best guess and explain why. Be specific about distinguishin
             max_tokens=1000,
         )
 
+        if not response.choices:
+            logger.error("Groq API returned empty response (no choices)")
+            return {"type": "unknown", "title": "Empty API response", "confidence": 0.0}
+
         text = response.choices[0].message.content
+        if not text:
+            logger.error("Groq API returned empty content")
+            return {"type": "unknown", "title": "Empty content", "confidence": 0.0}
+
+        logger.info(f"Groq response received: {len(text)} chars")
 
         try:
             json_start = text.find("{")
             json_end = text.rfind("}") + 1
             if json_start != -1 and json_end > json_start:
-                return json.loads(text[json_start:json_end])
+                parsed = json.loads(text[json_start:json_end])
+                logger.info(f"Parsed result: type={parsed.get('type')}, title={parsed.get('title')}")
+                return parsed
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse AI response as JSON: {e}")
 
@@ -91,5 +115,9 @@ If unsure, make your best guess and explain why. Be specific about distinguishin
         }
 
     except Exception as e:
-        logger.error(f"Groq API error: {e}")
-        return {"type": "unknown", "title": "API error", "confidence": 0.0}
+        logger.error(f"Groq API error: {type(e).__name__}: {str(e)[:200]}")
+        return {
+            "type": "unknown",
+            "title": f"Error: {type(e).__name__}",
+            "confidence": 0.0,
+        }

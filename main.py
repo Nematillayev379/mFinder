@@ -88,6 +88,12 @@ async def main():
     keep_alive_task = asyncio.create_task(self_keep_alive())
     logger.info("Self-ping task started (every 14 min)")
 
+    startup_delay = int(os.getenv("STARTUP_DELAY", "10"))
+    if startup_delay > 0:
+        logger.info(f"Waiting {startup_delay}s for old instance to stop...")
+        await asyncio.sleep(startup_delay)
+        logger.info("Starting polling...")
+
     logger.info("Bot is running!")
 
     try:

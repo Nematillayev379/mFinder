@@ -12,7 +12,9 @@ services:
       - key: TMDB_API_KEY
         sync: false
       - key: GROQ_MODEL
-        value: llama-3.2-90b-vision-preview
+        value: llama-3.2-11b-vision-preview
+      - key: STARTUP_DELAY
+        value: "15"
     healthCheckPath: ""
     autoDeploy: true
     disk:
