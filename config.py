@@ -19,7 +19,7 @@ def require_env(key: str) -> str:
 TELEGRAM_BOT_TOKEN = require_env("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = require_env("GROQ_API_KEY")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.2-11b-vision-preview")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
 MAX_VIDEO_SIZE = 50 * 1024 * 1024
 MAX_FRAMES = 5

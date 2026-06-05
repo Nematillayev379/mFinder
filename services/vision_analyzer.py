@@ -7,8 +7,8 @@ from config import GROQ_API_KEY, GROQ_MODEL
 logger = logging.getLogger(__name__)
 
 VISION_MODELS = [
-    "llama-3.2-90b-vision-preview",
-    "llama-3.2-11b-vision-preview",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
 ]
 
 if GROQ_MODEL not in VISION_MODELS:
