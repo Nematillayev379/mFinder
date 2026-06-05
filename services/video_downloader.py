@@ -57,6 +57,8 @@ async def download_video(url: str) -> str | None:
     unique_id = uuid.uuid4().hex
     output_template = str(output_dir / f"mfinder_{unique_id}.%(ext)s")
 
+    cookies_file = os.getenv("YOUTUBE_COOKIES_FILE", "data/youtube_cookies.txt")
+
     ydl_opts = {
         "format": "best[filesize<80M]/best[filesize_approx<80M]/best",
         "outtmpl": output_template,
@@ -71,9 +73,23 @@ async def download_video(url: str) -> str | None:
         "geo_bypass": True,
         "nocheckcertificate": True,
         "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        },
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web", "android", "ios", "tv_embedded"],
+                "skip": ["hls", "dash"]
+            }
         },
     }
+
+    if os.path.exists(cookies_file):
+        ydl_opts["cookiefile"] = cookies_file
+        logger.info(f"Using YouTube cookies from {cookies_file}")
+    else:
+        logger.debug(f"No cookies file at {cookies_file}, using defaults")
 
     try:
         loop = asyncio.get_event_loop()
