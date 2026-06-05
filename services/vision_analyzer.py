@@ -7,8 +7,8 @@ from config import GROQ_API_KEY, GROQ_MODEL
 logger = logging.getLogger(__name__)
 
 VISION_MODELS = [
-    "meta-llama/llama-4-scout-17b-16e-instruct",
     "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
 ]
 
 if GROQ_MODEL not in VISION_MODELS:
@@ -64,50 +64,47 @@ async def analyze_frames(frame_paths: list[str]) -> dict:
     if not images:
         return {"type": "unknown", "title": "No frames to analyze", "confidence": 0.0}
 
-    prompt = """You are an expert anime/movie/series identifier. Analyze ALL frames carefully step by step.
+    prompt = """CRITICAL: You must analyze visual features BEFORE naming anything. DO NOT default to popular anime.
 
-STEP 1 - VISUAL FEATURE ANALYSIS (be very detailed):
-- Character hair: color, length, style, accessories
-- Character eyes: color, shape
-- Character clothing: colors, style, armor/weapons, school uniform, traditional
-- Art style: modern digital, 2010s, 2020s, classic, CGI mix
-- Animation quality: cinematic, TV series, low-budget, high-budget
-- Background: medieval fantasy, modern city, school, sci-fi, post-apocalyptic
-- Distinctive elements: magic circles, mecha, demons, monsters, vehicles
-- Color palette: bright/colorful, dark/grim, pastel
-- Time period indicators: cars, technology, architecture
-- Any on-screen text: titles, watermarks, signs, kanji
+STEP 1 - DESCRIBE WHAT YOU SEE (must be specific):
+a) Characters visible: hair color/length, eye color, clothing, weapons, accessories
+b) Setting: indoor/outdoor, modern/medieval/fantasy/sci-fi, day/night
+c) Art style: line thickness, color saturation, animation era
+d) Distinctive objects: weapons, vehicles, creatures, technology
+e) Any text/logos on screen
 
-STEP 2 - CROSS-REFERENCE:
-Compare these features with your knowledge. If features match a famous anime, that's a good sign. If features DO NOT match popular series, say so. DO NOT guess popular names if features don't match.
+STEP 2 - GENRE IDENTIFICATION:
+Is this: isekai fantasy? school life? mecha? samurai? horror? comedy? shonen action?
+DO NOT just say "shonen action" - be specific.
 
-STEP 3 - IDENTIFICATION:
-Provide your best guess. Be honest about uncertainty.
+STEP 3 - CHECK AGAINST COMMON ANIME:
+- "Attack on Titan": soldiers with 3D gear, swords, walls, titans, scouts regiment cloaks
+- "Tensura/Slime": blue slime, demon lords, isekai, fantasy medieval, magic
+- "Naruto": ninjas, headbands, jutsu hand signs
+- "One Piece": straw hat, pirates, ships
+- "Demon Slayer": Taisho era, swords, demons
+- "Sword Art Online": VR, video game world, glowing swords
+- "My Hero Academia": superpowers, hero costumes, school
 
-CRITICAL RULES:
-- "Attack on Titan" has: 3D gear, soldiers with swords, walls, titans, scouts regiment, brown/blonde/black hair, green cloaks
-- "Tensura/Slime" has: slime characters, demon lords, fantasy medieval, magic, isekai, blue slime protagonist
-- "Naruto" has: ninjas, headbands, orange outfit, jutsu, leaf village
-- "One Piece" has: pirates, straw hat, devil fruits, Grand Line
-- Do NOT confuse isekai fantasy with shonen action
+ONLY name the anime if features CLEARLY match. If you see fantasy isekai with slimes/magic, it is NOT Attack on Titan.
 
-Respond in EXACT JSON:
+STEP 4 - JSON RESPONSE:
 {
     "type": "anime" or "movie" or "series",
-    "title": "Original title (be honest if unsure)",
+    "title": "Title (ONLY if confident)",
     "title_english": "English title",
     "title_japanese": "Japanese/Romaji title",
     "year": "Release year",
-    "genre": ["genre1"],
-    "studio": "Studio name",
+    "genre": ["genre"],
+    "studio": "Studio",
     "confidence": 0.0-1.0,
-    "visual_features": "Detailed description of what you see",
-    "reasoning": "Why this identification",
-    "anilist_id": "AniList ID if known (numeric)",
-    "tmdb_id": "TMDB ID if known (numeric)"
+    "visual_features": "Specific description of what you see in frames",
+    "reasoning": "Why this identification matches features",
+    "anilist_id": "AniList ID if known",
+    "tmdb_id": "TMDB ID if known"
 }
 
-If confidence < 0.6, say so. If you don't recognize it, give visual features only."""
+CRITICAL: If features don't match any anime, set confidence to 0.3 and describe visual features only. Better to say "I see isekai fantasy with blue slime" than to wrongly name Attack on Titan."""
 
     messages = [
         {
