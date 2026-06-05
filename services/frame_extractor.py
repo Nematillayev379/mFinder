@@ -1,8 +1,7 @@
 import asyncio
 import logging
 import os
-import signal
-import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -72,7 +71,7 @@ def cleanup_frames(frames: list[str]):
 
 
 def cleanup_old_temp():
-    now = tempfile.time.time()
+    now = time.time()
     for item in TEMP_DIR.iterdir():
         try:
             if item.is_dir():
