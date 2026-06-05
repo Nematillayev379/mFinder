@@ -64,33 +64,50 @@ async def analyze_frames(frame_paths: list[str]) -> dict:
     if not images:
         return {"type": "unknown", "title": "No frames to analyze", "confidence": 0.0}
 
-    prompt = """Analyze these video frames and identify the anime, movie, or TV series.
+    prompt = """You are an expert anime/movie/series identifier. Analyze ALL frames carefully step by step.
 
-Look for:
-1. Character designs (hair color, style, clothing, distinguishing features)
-2. Art style and animation quality
-3. Background settings and environments
-4. Text overlays (Japanese, English, etc.)
-5. Color palette and visual tone
-6. Any logos, titles, or watermarks
+STEP 1 - VISUAL FEATURE ANALYSIS (be very detailed):
+- Character hair: color, length, style, accessories
+- Character eyes: color, shape
+- Character clothing: colors, style, armor/weapons, school uniform, traditional
+- Art style: modern digital, 2010s, 2020s, classic, CGI mix
+- Animation quality: cinematic, TV series, low-budget, high-budget
+- Background: medieval fantasy, modern city, school, sci-fi, post-apocalyptic
+- Distinctive elements: magic circles, mecha, demons, monsters, vehicles
+- Color palette: bright/colorful, dark/grim, pastel
+- Time period indicators: cars, technology, architecture
+- Any on-screen text: titles, watermarks, signs, kanji
 
-Respond in this EXACT JSON format:
+STEP 2 - CROSS-REFERENCE:
+Compare these features with your knowledge. If features match a famous anime, that's a good sign. If features DO NOT match popular series, say so. DO NOT guess popular names if features don't match.
+
+STEP 3 - IDENTIFICATION:
+Provide your best guess. Be honest about uncertainty.
+
+CRITICAL RULES:
+- "Attack on Titan" has: 3D gear, soldiers with swords, walls, titans, scouts regiment, brown/blonde/black hair, green cloaks
+- "Tensura/Slime" has: slime characters, demon lords, fantasy medieval, magic, isekai, blue slime protagonist
+- "Naruto" has: ninjas, headbands, orange outfit, jutsu, leaf village
+- "One Piece" has: pirates, straw hat, devil fruits, Grand Line
+- Do NOT confuse isekai fantasy with shonen action
+
+Respond in EXACT JSON:
 {
     "type": "anime" or "movie" or "series",
-    "title": "Original title",
-    "title_english": "English title if different",
-    "title_japanese": "Japanese title if anime",
-    "year": "Release year or range",
-    "genre": ["genre1", "genre2"],
-    "studio": "Studio name if anime",
-    "episode": "Episode number if identifiable",
-    "confidence": 0.0 to 1.0,
-    "description": "Brief description",
-    "anilist_id": "AniList ID if anime (numeric)",
-    "tmdb_id": "TMDB ID if movie/series (numeric)"
+    "title": "Original title (be honest if unsure)",
+    "title_english": "English title",
+    "title_japanese": "Japanese/Romaji title",
+    "year": "Release year",
+    "genre": ["genre1"],
+    "studio": "Studio name",
+    "confidence": 0.0-1.0,
+    "visual_features": "Detailed description of what you see",
+    "reasoning": "Why this identification",
+    "anilist_id": "AniList ID if known (numeric)",
+    "tmdb_id": "TMDB ID if known (numeric)"
 }
 
-If unsure, make your best guess and explain why. Be specific about distinguishing features."""
+If confidence < 0.6, say so. If you don't recognize it, give visual features only."""
 
     messages = [
         {
