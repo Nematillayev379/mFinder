@@ -12,6 +12,7 @@ from services.frame_extractor import extract_frames, cleanup_frames
 from services.vision_analyzer import analyze_frames
 from services.anime_searcher import search_anime_advanced, get_anime_by_id
 from services.movie_searcher import search_movie, search_tv, get_movie_details, get_tv_details
+from services.video_downloader import is_video_url, extract_first_url, download_video
 from services.cache_service import compute_hash, get_cached, set_cached, check_rate_limit
 from config import MAX_VIDEO_SIZE, RATE_LIMIT, MAX_CONCURRENT, MAX_MESSAGE_LENGTH
 
@@ -20,6 +21,67 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 _semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+
+
+async def _process_video_file(message: Message, status_msg, tmp_path: str, user_id: int, lang: str):
+    """Video faylni tahlil qilish (video, video_note, animation, yoki yuklab olingan URL)"""
+    video_hash = compute_hash(tmp_path)
+    cached = get_cached(video_hash)
+    if cached:
+        if len(cached) <= MAX_MESSAGE_LENGTH:
+            await status_msg.edit_text(cached, parse_mode="HTML")
+        else:
+            await status_msg.edit_text(cached[:MAX_MESSAGE_LENGTH])
+        return
+
+    frames = await extract_frames(tmp_path)
+
+    if not frames:
+        await status_msg.edit_text(get_message(lang, "not_found"))
+        return
+
+    ai_result = await analyze_frames(frames)
+
+    anime_data = None
+    movie_data = None
+
+    media_type = ai_result.get("type", "unknown")
+    title = ai_result.get("title", "")
+
+    if media_type == "anime":
+        anilist_id = ai_result.get("anilist_id")
+        if anilist_id:
+            try:
+                anime_data = await get_anime_by_id(int(anilist_id))
+            except (ValueError, TypeError):
+                pass
+        if not anime_data:
+            anime_data = await search_anime_advanced(
+                title,
+                studio=ai_result.get("studio"),
+                year=ai_result.get("year"),
+            )
+    elif media_type in ("movie", "series"):
+        if media_type == "series":
+            search_result = await search_tv(title)
+            if search_result:
+                movie_data = await get_tv_details(search_result["id"])
+        else:
+            search_result = await search_movie(title)
+            if search_result:
+                movie_data = await get_movie_details(search_result["id"])
+
+    result_text = format_result(ai_result, anime_data, movie_data, lang)
+
+    set_cached(video_hash, result_text)
+
+    if len(result_text) <= MAX_MESSAGE_LENGTH:
+        await status_msg.edit_text(result_text, parse_mode="HTML")
+    else:
+        chunks = [result_text[i:i+MAX_MESSAGE_LENGTH] for i in range(0, len(result_text), MAX_MESSAGE_LENGTH)]
+        await status_msg.edit_text(chunks[0], parse_mode="HTML")
+        for chunk in chunks[1:]:
+            await message.answer(chunk, parse_mode="HTML")
 
 
 @router.message(F.video | F.video_note | F.animation)
@@ -51,66 +113,61 @@ async def handle_video(message: Message):
             tmp_path = os.path.join(tempfile.gettempdir(), unique_name)
             await message.bot.download_file(file.file_path, tmp_path)
 
-            video_hash = compute_hash(tmp_path)
-            cached = get_cached(video_hash)
-            if cached:
-                if len(cached) <= MAX_MESSAGE_LENGTH:
-                    await status_msg.edit_text(cached, parse_mode="HTML")
-                else:
-                    await status_msg.edit_text(cached[:MAX_MESSAGE_LENGTH])
-                return
-
-            frames = await extract_frames(tmp_path)
-
-            if not frames:
-                await status_msg.edit_text(get_message(lang, "not_found"))
-                return
-
-            ai_result = await analyze_frames(frames)
-
-            anime_data = None
-            movie_data = None
-
-            media_type = ai_result.get("type", "unknown")
-            title = ai_result.get("title", "")
-
-            if media_type == "anime":
-                anilist_id = ai_result.get("anilist_id")
-                if anilist_id:
-                    try:
-                        anime_data = await get_anime_by_id(int(anilist_id))
-                    except (ValueError, TypeError):
-                        pass
-                if not anime_data:
-                    anime_data = await search_anime_advanced(
-                        title,
-                        studio=ai_result.get("studio"),
-                        year=ai_result.get("year"),
-                    )
-            elif media_type in ("movie", "series"):
-                if media_type == "series":
-                    search_result = await search_tv(title)
-                    if search_result:
-                        movie_data = await get_tv_details(search_result["id"])
-                else:
-                    search_result = await search_movie(title)
-                    if search_result:
-                        movie_data = await get_movie_details(search_result["id"])
-
-            result_text = format_result(ai_result, anime_data, movie_data, lang)
-
-            set_cached(video_hash, result_text)
-
-            if len(result_text) <= MAX_MESSAGE_LENGTH:
-                await status_msg.edit_text(result_text, parse_mode="HTML")
-            else:
-                chunks = [result_text[i:i+MAX_MESSAGE_LENGTH] for i in range(0, len(result_text), MAX_MESSAGE_LENGTH)]
-                await status_msg.edit_text(chunks[0], parse_mode="HTML")
-                for chunk in chunks[1:]:
-                    await message.answer(chunk, parse_mode="HTML")
+            await _process_video_file(message, status_msg, tmp_path, user_id, lang)
 
     except Exception as e:
         logger.exception(f"Video processing error for user {user_id}: {e}")
+        try:
+            await status_msg.edit_text(get_message(lang, "error"))
+        except Exception:
+            pass
+
+    finally:
+        if frames:
+            cleanup_frames(frames)
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+@router.message(F.text & F.text.contains("http"))
+async def handle_url(message: Message):
+    """Matn ichida video URL bo'lsa - yuklab olib tahlil qilish"""
+    user_id = message.from_user.id
+    lang = get_user_lang(user_id)
+    text = message.text or ""
+
+    if not is_video_url(text):
+        return
+
+    url = extract_first_url(text)
+    if not url:
+        return
+
+    if not check_rate_limit(user_id, RATE_LIMIT):
+        await message.answer(get_message(lang, "rate_limit"))
+        return
+
+    status_msg = await message.answer(get_message(lang, "downloading"))
+
+    tmp_path = None
+    frames = []
+
+    try:
+        async with _semaphore:
+            tmp_path = await download_video(url)
+
+            if not tmp_path:
+                await status_msg.edit_text(get_message(lang, "download_failed"))
+                return
+
+            await status_msg.edit_text(get_message(lang, "processing"))
+            await _process_video_file(message, status_msg, tmp_path, user_id, lang)
+
+    except Exception as e:
+        logger.exception(f"URL processing error for user {user_id}: {e}")
         try:
             await status_msg.edit_text(get_message(lang, "error"))
         except Exception:

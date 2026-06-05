@@ -1,7 +1,7 @@
 MESSAGES = {
     "uz": {
         "start": "🎬 Salom! Men video aniqlash botman.\n\nVideo yuboring, men anime yoki kino nomini topib beraman!",
-        "help": "📹 Foydalanish:\n1. Video yuboring (MP4, MOV, AVI)\n2. Men kadrlarni tahlil qilaman\n3. Anime/kino nomini topib beraman\n\n⚙️ Buyruqlar:\n/start - Botni ishga tushirish\n/lang - Tilni o'zgartirish\n/help - Yordma",
+        "help": "📹 Foydalanish:\n1. Video yuboring (MP4, MOV, AVI)\n2. Yoki link yuboring (YouTube, Instagram, TikTok, Twitter)\n3. Men kadrlarni tahlil qilaman\n4. Anime/kino nomini topib beraman\n\n⚙️ Buyruqlar:\n/start - Botni ishga tushirish\n/lang - Tilni o'zgartirish\n/help - Yordma",
         "processing": "⏳ Video qayta ishlanmoqda...\n\n🔍 Kadrlar tahlil qilinmoqda...",
         "found_anime": "🎬 ANIME TOPILDI!",
         "found_movie": "🎬 KINO TOPILDI!",
@@ -20,10 +20,12 @@ MESSAGES = {
         "rate_limit": "⚠️ Kunlik limit tugadi. Ertaga qaytadan urinib ko'ring.",
         "lang_set": "✅ Til o'zgartirildi!",
         "video_too_large": "⚠️ Video juda katta. Maksimal 50MB.",
+        "downloading": "⏳ Video yuklanmoqda...\n\n🔗 Linkdan video olinmoqda...",
+        "download_failed": "❌ Video yuklab bo'lmadi.\n\nSabablar:\n• Link yaroqsiz\n• Video juda katta (max 80MB)\n• Platforma qo'llab-quvvatlanmaydi\n• Yoki video maxfiy",
     },
     "en": {
         "start": "🎬 Hello! I'm a video identification bot.\n\nSend me a video, and I'll find the anime or movie name!",
-        "help": "📹 How to use:\n1. Send a video (MP4, MOV, AVI)\n2. I'll analyze the frames\n3. I'll find the anime/movie name\n\n⚙️ Commands:\n/start - Start the bot\n/lang - Change language\n/help - Help",
+        "help": "📹 How to use:\n1. Send a video (MP4, MOV, AVI)\n2. Or send a link (YouTube, Instagram, TikTok, Twitter)\n3. I'll analyze the frames\n4. I'll find the anime/movie name\n\n⚙️ Commands:\n/start - Start the bot\n/lang - Change language\n/help - Help",
         "processing": "⏳ Processing video...\n\n🔍 Analyzing frames...",
         "found_anime": "🎬 ANIME FOUND!",
         "found_movie": "🎬 MOVIE FOUND!",
@@ -42,10 +44,12 @@ MESSAGES = {
         "rate_limit": "⚠️ Daily limit reached. Try again tomorrow.",
         "lang_set": "✅ Language changed!",
         "video_too_large": "⚠️ Video is too large. Maximum 50MB.",
+        "downloading": "⏳ Downloading video...\n\n🔗 Fetching video from link...",
+        "download_failed": "❌ Could not download video.\n\nReasons:\n• Invalid link\n• Video too large (max 80MB)\n• Platform not supported\n• Or video is private",
     },
     "ru": {
         "start": "🎬 Привет! Я бот для определения видео.\n\nОтправьте видео, и я найду название аниме или фильма!",
-        "help": "📹 Как использовать:\n1. Отправьте видео (MP4, MOV, AVI)\n2. Я проанализирую кадры\n3. Я найду название аниме/фильма\n\n⚙️ Команды:\n/start - Запустить бота\n/lang - Изменить язык\n/help - Помощь",
+        "help": "📹 Как использовать:\n1. Отправьте видео (MP4, MOV, AVI)\n2. Или отправьте ссылку (YouTube, Instagram, TikTok, Twitter)\n3. Я проанализирую кадры\n4. Я найду название аниме/фильма\n\n⚙️ Команды:\n/start - Запустить бота\n/lang - Изменить язык\n/help - Помощь",
         "processing": "⏳ Обработка видео...\n\n🔍 Анализ кадров...",
         "found_anime": "🎬 АНИМЕ НАЙДЕНО!",
         "found_movie": "🎬 ФИЛЬМ НАЙДЕН!",
@@ -64,10 +68,12 @@ MESSAGES = {
         "rate_limit": "⚠️ Дневной лимит исчерпан. Попробуйте завтра.",
         "lang_set": "✅ Язык изменён!",
         "video_too_large": "⚠️ Видео слишком большое. Максимум 50MB.",
+        "downloading": "⏳ Загрузка видео...\n\n🔗 Получаю видео по ссылке...",
+        "download_failed": "❌ Не удалось загрузить видео.\n\nПричины:\n• Неверная ссылка\n• Видео слишком большое (макс 80MB)\n• Платформа не поддерживается\n• Или видео приватное",
     },
     "ja": {
         "start": "🎬 こんにちは！ビデオ識別ボットです。\n\nビデオを送ると、アニメや映画の名前を見つけます！",
-        "help": "📹 使い方：\n1. ビデオを送る（MP4、MOV、AVI）\n2. フレームを分析\n3. アニメ/映画の名前を見つける\n\n⚙️ コマンド：\n/start - ボットを起動\n/lang - 言語を変更\n/help - ヘルプ",
+        "help": "📹 使い方：\n1. ビデオを送る（MP4、MOV、AVI）\n2. またはリンクを送る（YouTube、Instagram、TikTok、Twitter）\n3. フレームを分析\n4. アニメ/映画の名前を見つける\n\n⚙️ コマンド：\n/start - ボットを起動\n/lang - 言語を変更\n/help - ヘルプ",
         "processing": "⏳ ビデオを処理中...\n\n🔍 フレームを分析中...",
         "found_anime": "🎬 アニメ発見！",
         "found_movie": "🎬 映画発見！",
@@ -86,6 +92,8 @@ MESSAGES = {
         "rate_limit": "⚠️ 日次制限に達しました。明日またお試しください。",
         "lang_set": "✅ 言語が変更されました！",
         "video_too_large": "⚠️ ビデオが大きすぎます。最大50MB。",
+        "downloading": "⏳ ビデオをダウンロード中...\n\n🔗 リンクからビデオを取得中...",
+        "download_failed": "❌ ビデオをダウンロードできませんでした。\n\n理由:\n• リンクが無効\n• ビデオが大きすぎ（最大80MB）\n• プラットフォーム非対応\n• またはビデオが非公開",
     },
 }
 
