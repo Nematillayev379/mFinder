@@ -1,7 +1,7 @@
 import json
 import logging
 import base64
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, BadRequestError
 from config import GROQ_API_KEY, GROQ_MODEL
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,26 @@ client = AsyncOpenAI(
     base_url="https://api.groq.com/openai/v1",
     timeout=60,
 )
+
+
+async def _try_model(model_name: str, messages: list, max_tokens: int) -> str | None:
+    """Bir model bilan urinib ko'radi. None qaytarsa, model ishlamayapti"""
+    try:
+        logger.info(f"Trying model: {model_name}")
+        response = await client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            max_tokens=max_tokens,
+        )
+        if response.choices and response.choices[0].message.content:
+            return response.choices[0].message.content
+        return None
+    except BadRequestError as e:
+        logger.error(f"Model {model_name} BadRequest: {str(e)[:300]}")
+        return None
+    except Exception as e:
+        logger.error(f"Model {model_name} error: {type(e).__name__}: {str(e)[:200]}")
+        return None
 
 
 async def analyze_frames(frame_paths: list[str]) -> dict:
@@ -72,52 +92,51 @@ Respond in this EXACT JSON format:
 
 If unsure, make your best guess and explain why. Be specific about distinguishing features."""
 
-    try:
-        response = await client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        *images,
-                    ],
-                }
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                *images,
             ],
-            max_tokens=1000,
-        )
+        }
+    ]
 
-        if not response.choices:
-            logger.error("Groq API returned empty response (no choices)")
-            return {"type": "unknown", "title": "Empty API response", "confidence": 0.0}
+    models_to_try = [GROQ_MODEL] + [m for m in VISION_MODELS if m != GROQ_MODEL]
 
-        text = response.choices[0].message.content
-        if not text:
-            logger.error("Groq API returned empty content")
-            return {"type": "unknown", "title": "Empty content", "confidence": 0.0}
+    text = None
+    used_model = None
+    for model in models_to_try:
+        text = await _try_model(model, messages, 1000)
+        if text:
+            used_model = model
+            logger.info(f"✅ Success with model: {model}")
+            break
+        else:
+            logger.warning(f"❌ Model {model} failed, trying next...")
 
-        logger.info(f"Groq response received: {len(text)} chars")
-
-        try:
-            json_start = text.find("{")
-            json_end = text.rfind("}") + 1
-            if json_start != -1 and json_end > json_start:
-                parsed = json.loads(text[json_start:json_end])
-                logger.info(f"Parsed result: type={parsed.get('type')}, title={parsed.get('title')}")
-                return parsed
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse AI response as JSON: {e}")
-
+    if not text:
+        logger.error("All vision models failed")
         return {
             "type": "unknown",
-            "title": text[:200],
+            "title": "All models failed - check logs",
             "confidence": 0.0,
         }
 
-    except Exception as e:
-        logger.error(f"Groq API error: {type(e).__name__}: {str(e)[:200]}")
-        return {
-            "type": "unknown",
-            "title": f"Error: {type(e).__name__}",
-            "confidence": 0.0,
-        }
+    logger.info(f"Groq response from {used_model}: {len(text)} chars")
+
+    try:
+        json_start = text.find("{")
+        json_end = text.rfind("}") + 1
+        if json_start != -1 and json_end > json_start:
+            parsed = json.loads(text[json_start:json_end])
+            logger.info(f"Parsed: type={parsed.get('type')}, title={parsed.get('title')}")
+            return parsed
+    except json.JSONDecodeError as e:
+        logger.warning(f"JSON parse error: {e}")
+
+    return {
+        "type": "unknown",
+        "title": text[:200],
+        "confidence": 0.0,
+    }
