@@ -34,6 +34,7 @@ async def _try_model(model_name: str, messages: list, max_tokens: int) -> str | 
             model=model_name,
             messages=messages,
             max_tokens=max_tokens,
+            temperature=0.3,
         )
         if response.choices and response.choices[0].message.content:
             return response.choices[0].message.content
