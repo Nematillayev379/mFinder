@@ -13,6 +13,7 @@ from services.vision_analyzer import analyze_frames
 from services.anime_searcher import search_anime_advanced, get_anime_by_id
 from services.movie_searcher import search_movie, search_tv, get_movie_details, get_tv_details
 from services.video_downloader import is_video_url, extract_first_url, download_video
+from services.trace_moe_service import search_anime_by_image
 from services.cache_service import compute_hash, get_cached, set_cached, check_rate_limit
 from config import MAX_VIDEO_SIZE, RATE_LIMIT, MAX_CONCURRENT, MAX_MESSAGE_LENGTH
 
@@ -40,15 +41,45 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
         await status_msg.edit_text(get_message(lang, "not_found"))
         return
 
-    ai_result = await analyze_frames(frames)
+    trace_result = await search_anime_by_image(frames[0])
 
+    ai_result = None
     anime_data = None
     movie_data = None
+
+    if trace_result:
+        anilist_id = trace_result.get("anilist_id")
+        if anilist_id:
+            anime_data = await get_anime_by_id(int(anilist_id))
+
+        if anime_data:
+            titles = anime_data.get("title", {}) or {}
+            ai_result = {
+                "type": "anime",
+                "title": titles.get("romaji") or titles.get("english") or titles.get("native") or "Unknown",
+                "title_english": titles.get("english") or "",
+                "title_japanese": titles.get("native") or "",
+                "year": str((anime_data.get("startDate") or {}).get("year") or ""),
+                "genre": anime_data.get("genres") or [],
+                "studio": "",
+                "confidence": trace_result.get("similarity", 0.0),
+                "visual_features": f"trace.moe match (similarity: {trace_result.get('similarity', 0):.0%})",
+                "reasoning": f"Episode {trace_result.get('episode', '?')} identified via frame matching",
+                "anilist_id": str(anilist_id),
+                "tmdb_id": "",
+                "episode": str(trace_result.get("episode") or ""),
+            }
+            logger.info(f"Using trace.moe result: {ai_result['title']}")
+        else:
+            trace_result = None
+
+    if ai_result is None:
+        ai_result = await analyze_frames(frames)
 
     media_type = ai_result.get("type", "unknown")
     title = ai_result.get("title", "")
 
-    if media_type == "anime":
+    if media_type == "anime" and not anime_data:
         anilist_id = ai_result.get("anilist_id")
         if anilist_id:
             try:
@@ -61,7 +92,7 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
                 studio=ai_result.get("studio"),
                 year=ai_result.get("year"),
             )
-    elif media_type in ("movie", "series"):
+    elif media_type in ("movie", "series") and not movie_data:
         if media_type == "series":
             search_result = await search_tv(title)
             if search_result:
