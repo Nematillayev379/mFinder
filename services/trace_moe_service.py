@@ -5,14 +5,10 @@ from config import HTTP_TIMEOUT
 logger = logging.getLogger(__name__)
 
 TRACE_MOE_API = "https://api.trace.moe/search"
-SIMILARITY_THRESHOLD = 0.82
+SIMILARITY_THRESHOLD = 0.50
 
 
 async def search_anime_by_image(image_path: str) -> dict | None:
-    """
-    Anime frame rasmidan anime aniqlash (trace.moe orqali).
-    Faqat ANIMElar uchun - film/serial uchun ishlamaydi.
-    """
     try:
         with open(image_path, "rb") as f:
             image_data = f.read()
@@ -93,4 +89,78 @@ async def search_anime_by_image(image_path: str) -> dict | None:
         return None
     except Exception as e:
         logger.error(f"trace.moe error: {type(e).__name__}: {e}")
+        return None
+
+
+async def search_anime_by_video(video_path: str) -> dict | None:
+    """Video faylni to'g'ridan-to'g'ri trace.moe ga yuborish - aniqroq natija"""
+    try:
+        import os
+        size = os.path.getsize(video_path)
+        if size > 20 * 1024 * 1024:
+            logger.info("trace.moe: Video too large for direct upload, skipping")
+            return None
+
+        with open(video_path, "rb") as f:
+            video_data = f.read()
+
+        form = aiohttp.FormData()
+        form.add_field(
+            "image",
+            video_data,
+            filename="video.mp4",
+            content_type="video/mp4",
+        )
+
+        timeout = aiohttp.ClientTimeout(total=60)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                f"{TRACE_MOE_API}?anilistInfo",
+                data=form,
+            ) as resp:
+                if resp.status in (402, 429):
+                    return None
+                if resp.status != 200:
+                    return None
+
+                data = await resp.json()
+                if data.get("error"):
+                    return None
+
+                results = data.get("result") or []
+                if not results:
+                    return None
+
+                best = results[0]
+                similarity = best.get("similarity", 0)
+
+                if similarity < SIMILARITY_THRESHOLD:
+                    return None
+
+                anilist = best.get("anilist", {})
+                if isinstance(anilist, int):
+                    anilist_id = anilist
+                else:
+                    anilist_id = anilist.get("id")
+
+                logger.info(
+                    f"trace.moe (video): Match - anilist_id={anilist_id}, "
+                    f"similarity={similarity:.2%}"
+                )
+
+                return {
+                    "anilist_id": anilist_id,
+                    "similarity": similarity,
+                    "episode": best.get("episode"),
+                    "filename": best.get("filename"),
+                    "from_time": best.get("from"),
+                    "to_time": best.get("to"),
+                    "video": best.get("video"),
+                    "image": best.get("image"),
+                    "anilist_info": anilist if isinstance(anilist, dict) else None,
+                    "source": "trace.moe",
+                }
+
+    except Exception as e:
+        logger.debug(f"trace.moe video search: {type(e).__name__}: {e}")
         return None

@@ -11,7 +11,10 @@ TEMP_DIR = Path("data/temp")
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
-async def extract_frames(video_path: str, max_frames: int = 5, interval: int = 2) -> list[str]:
+from config import MAX_FRAMES, FRAME_INTERVAL
+
+
+async def extract_frames(video_path: str, max_frames: int = MAX_FRAMES, interval: int = FRAME_INTERVAL) -> list[str]:
     output_dir = TEMP_DIR / str(uuid.uuid4())
     output_dir.mkdir(parents=True, exist_ok=True)
 

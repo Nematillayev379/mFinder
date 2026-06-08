@@ -2,7 +2,7 @@ import json
 import logging
 import base64
 from openai import AsyncOpenAI, BadRequestError
-from config import GROQ_API_KEY, GROQ_MODEL
+from config import GROQ_API_KEY, GROQ_MODEL, MAX_FRAMES
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ async def _try_model(model_name: str, messages: list, max_tokens: int) -> str | 
 
 async def analyze_frames(frame_paths: list[str]) -> dict:
     images = []
-    for path in frame_paths[:5]:
+    for path in frame_paths[:MAX_FRAMES]:
         try:
             with open(path, "rb") as f:
                 images.append({

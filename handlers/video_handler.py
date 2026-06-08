@@ -13,9 +13,9 @@ from services.vision_analyzer import analyze_frames
 from services.anime_searcher import search_anime_advanced, get_anime_by_id
 from services.movie_searcher import search_movie, search_tv, get_movie_details, get_tv_details
 from services.video_downloader import is_video_url, extract_first_url, download_video
-from services.trace_moe_service import search_anime_by_image
+from services.trace_moe_service import search_anime_by_image, search_anime_by_video
 from services.cache_service import compute_hash, get_cached, set_cached, check_rate_limit
-from config import MAX_VIDEO_SIZE, RATE_LIMIT, MAX_CONCURRENT, MAX_MESSAGE_LENGTH
+from config import MAX_VIDEO_SIZE, RATE_LIMIT, MAX_CONCURRENT, MAX_MESSAGE_LENGTH, MAX_FRAMES, FRAME_INTERVAL
 
 logger = logging.getLogger(__name__)
 
@@ -24,24 +24,23 @@ router = Router()
 _semaphore = asyncio.Semaphore(MAX_CONCURRENT)
 
 
-async def _process_video_file(message: Message, status_msg, tmp_path: str, user_id: int, lang: str):
-    """Video faylni tahlil qilish (video, video_note, animation, yoki yuklab olingan URL)"""
-    video_hash = compute_hash(tmp_path)
-    cached = get_cached(video_hash)
-    if cached:
-        if len(cached) <= MAX_MESSAGE_LENGTH:
-            await status_msg.edit_text(cached, parse_mode="HTML")
-        else:
-            await status_msg.edit_text(cached[:MAX_MESSAGE_LENGTH])
-        return
-
-    frames = await extract_frames(tmp_path)
+async def _process_video_file(message: Message, status_msg, tmp_path: str, user_id: int, lang: str) -> list[str]:
+    frames = await extract_frames(tmp_path, max_frames=MAX_FRAMES, interval=FRAME_INTERVAL)
 
     if not frames:
         await status_msg.edit_text(get_message(lang, "not_found"))
-        return
+        return []
 
-    trace_result = await search_anime_by_image(frames[0])
+    trace_result = await search_anime_by_video(tmp_path)
+
+    if not trace_result:
+        trace_result = await search_anime_by_image(frames[0])
+
+    if not trace_result and len(frames) > 1:
+        trace_result = await search_anime_by_image(frames[1])
+
+    if not trace_result and len(frames) > 2:
+        trace_result = await search_anime_by_image(frames[len(frames) // 2])
 
     ai_result = None
     anime_data = None
@@ -50,7 +49,10 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
     if trace_result:
         anilist_id = trace_result.get("anilist_id")
         if anilist_id:
-            anime_data = await get_anime_by_id(int(anilist_id))
+            try:
+                anime_data = await get_anime_by_id(int(anilist_id))
+            except (ValueError, TypeError):
+                pass
 
         if anime_data:
             titles = anime_data.get("title", {}) or {}
@@ -69,7 +71,7 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
                 "tmdb_id": "",
                 "episode": str(trace_result.get("episode") or ""),
             }
-            logger.info(f"Using trace.moe result: {ai_result['title']}")
+            logger.info(f"trace.moe match: {ai_result['title']} ({ai_result['confidence']:.0%})")
         else:
             trace_result = None
 
@@ -104,7 +106,7 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
 
     result_text = format_result(ai_result, anime_data, movie_data, lang)
 
-    set_cached(video_hash, result_text)
+    set_cached(video_hash := compute_hash(tmp_path), result_text)
 
     if len(result_text) <= MAX_MESSAGE_LENGTH:
         await status_msg.edit_text(result_text, parse_mode="HTML")
@@ -113,6 +115,8 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
         await status_msg.edit_text(chunks[0], parse_mode="HTML")
         for chunk in chunks[1:]:
             await message.answer(chunk, parse_mode="HTML")
+
+    return frames
 
 
 @router.message(F.video | F.video_note | F.animation)
@@ -144,7 +148,16 @@ async def handle_video(message: Message):
             tmp_path = os.path.join(tempfile.gettempdir(), unique_name)
             await message.bot.download_file(file.file_path, tmp_path)
 
-            await _process_video_file(message, status_msg, tmp_path, user_id, lang)
+            video_hash = compute_hash(tmp_path)
+            cached = get_cached(video_hash)
+            if cached:
+                if len(cached) <= MAX_MESSAGE_LENGTH:
+                    await status_msg.edit_text(cached, parse_mode="HTML")
+                else:
+                    await status_msg.edit_text(cached[:MAX_MESSAGE_LENGTH])
+                return
+
+            frames = await _process_video_file(message, status_msg, tmp_path, user_id, lang)
 
     except Exception as e:
         logger.exception(f"Video processing error for user {user_id}: {e}")
@@ -165,7 +178,6 @@ async def handle_video(message: Message):
 
 @router.message(F.text & F.text.contains("http"))
 async def handle_url(message: Message):
-    """Matn ichida video URL bo'lsa - yuklab olib tahlil qilish"""
     user_id = message.from_user.id
     lang = get_user_lang(user_id)
     text = message.text or ""
@@ -195,7 +207,16 @@ async def handle_url(message: Message):
                 return
 
             await status_msg.edit_text(get_message(lang, "processing"))
-            await _process_video_file(message, status_msg, tmp_path, user_id, lang)
+            video_hash = compute_hash(tmp_path)
+            cached = get_cached(video_hash)
+            if cached:
+                if len(cached) <= MAX_MESSAGE_LENGTH:
+                    await status_msg.edit_text(cached, parse_mode="HTML")
+                else:
+                    await status_msg.edit_text(cached[:MAX_MESSAGE_LENGTH])
+                return
+
+            frames = await _process_video_file(message, status_msg, tmp_path, user_id, lang)
 
     except Exception as e:
         logger.exception(f"URL processing error for user {user_id}: {e}")

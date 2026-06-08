@@ -143,14 +143,27 @@ def format_movie(ai_result: dict, data: dict, lang: str) -> str:
 def format_generic(ai_result: dict, lang: str) -> str:
     title = ai_result.get("title", "Unknown")
     confidence = ai_result.get("confidence", 0)
-    description = ai_result.get("description", "")
+    visual_features = ai_result.get("visual_features", "")
+    reasoning = ai_result.get("reasoning", "")
+
+    if title in ("All models failed - check logs", "No frames to analyze", "Empty API response", "Empty content"):
+        msg = "🔍 <b>TAHLIL NATIJASI</b>\n\n"
+        msg += "⚠️ Video aniqlanmadi.\n\n"
+        msg += "💡 <b>Maslahatlar:</b>\n"
+        msg += "• Video 2-3 soniya uzunlikda bo'lsin\n"
+        msg += "• Personajlar yoki sahna aniq ko'rinishi kerak\n"
+        msg += "• Boshqa video sinab ko'ring\n"
+        return msg
 
     msg = "🔍 <b>TAHLIL NATIJASI</b>\n\n"
     msg += f"📌 <b>Taxminiy nom:</b> {escape(title)}\n"
     msg += f"📊 <b>Ishonch:</b> {int(confidence * 100)}%\n"
 
-    if description:
-        msg += f"\n📝 <b>Tavsif:</b>\n{escape(description)}\n"
+    if visual_features:
+        msg += f"\n👁 <b>Ko'rgan narsa:</b> {escape(visual_features)}\n"
+
+    if reasoning:
+        msg += f"\n🧠 <b>Sabab:</b> {escape(reasoning)}\n"
 
     msg += "\n⚠️ Aniqlashda qiyinchilik bo'ldi. Video aniqroq bo'lsa yaxshiroq natija beradi."
 
