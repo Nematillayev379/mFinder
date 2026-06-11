@@ -10,7 +10,7 @@ from utils.languages import get_message
 from utils.formatter import format_result
 from services.frame_extractor import extract_frames, cleanup_frames
 from services.vision_analyzer import analyze_frames
-from services.anime_searcher import search_anime_advanced, get_anime_by_id
+from services.anime_searcher import search_anime_advanced, get_anime_by_id, search_anime
 from services.movie_searcher import search_movie, search_tv, get_movie_details, get_tv_details
 from services.video_downloader import is_video_url, extract_first_url, download_video
 from services.trace_moe_service import search_anime_by_image, search_anime_by_video
@@ -80,6 +80,8 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
 
     media_type = ai_result.get("type", "unknown")
     title = ai_result.get("title", "")
+    confidence = ai_result.get("confidence", 0)
+    search_terms = ai_result.get("search_terms", "")
 
     if media_type == "anime" and not anime_data:
         anilist_id = ai_result.get("anilist_id")
@@ -94,6 +96,13 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
                 studio=ai_result.get("studio"),
                 year=ai_result.get("year"),
             )
+        if not anime_data and confidence < 0.5 and search_terms:
+            logger.info(f"Low confidence ({confidence:.2f}), trying search_terms: {search_terms}")
+            anime_data = await search_anime(search_terms)
+        if not anime_data and confidence < 0.5 and title and title != "Unknown":
+            logger.info(f"Trying alternative search with title: {title}")
+            anime_data = await search_anime(title)
+
     elif media_type in ("movie", "series") and not movie_data:
         if media_type == "series":
             search_result = await search_tv(title)
@@ -103,6 +112,9 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
             search_result = await search_movie(title)
             if search_result:
                 movie_data = await get_movie_details(search_result["id"])
+
+    if not anime_data and not movie_data and ai_result.get("type") == "unknown":
+        pass
 
     result_text = format_result(ai_result, anime_data, movie_data, lang)
 
