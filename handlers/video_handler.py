@@ -14,6 +14,7 @@ from services.anime_searcher import search_anime_advanced, get_anime_by_id, sear
 from services.movie_searcher import search_movie, search_tv, get_movie_details, get_tv_details
 from services.video_downloader import is_video_url, extract_first_url, download_video
 from services.trace_moe_service import search_anime_by_image, search_anime_by_video
+from services.saucenao_service import search_by_image as saucenao_search
 from services.cache_service import compute_hash, get_cached, set_cached, check_rate_limit
 from config import MAX_VIDEO_SIZE, RATE_LIMIT, MAX_CONCURRENT, MAX_MESSAGE_LENGTH, MAX_FRAMES, FRAME_INTERVAL
 
@@ -41,6 +42,13 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
 
     if not trace_result and len(frames) > 2:
         trace_result = await search_anime_by_image(frames[len(frames) // 2])
+
+    saucenao_result = None
+    if not trace_result:
+        for i in range(min(3, len(frames))):
+            saucenao_result = await saucenao_search(frames[i])
+            if saucenao_result:
+                break
 
     ai_result = None
     anime_data = None
@@ -74,6 +82,43 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
             logger.info(f"trace.moe match: {ai_result['title']} ({ai_result['confidence']:.0%})")
         else:
             trace_result = None
+
+    if not ai_result and saucenao_result:
+        sn_title = saucenao_result.get("title", "")
+        if sn_title:
+            anime_data = await search_anime(sn_title)
+        if anime_data:
+            titles = anime_data.get("title", {}) or {}
+            ai_result = {
+                "type": "anime",
+                "title": titles.get("romaji") or titles.get("english") or titles.get("native") or sn_title,
+                "title_english": titles.get("english") or "",
+                "title_japanese": titles.get("native") or "",
+                "year": str((anime_data.get("startDate") or {}).get("year") or ""),
+                "genre": anime_data.get("genres") or [],
+                "studio": "",
+                "confidence": saucenao_result.get("similarity", 0.0),
+                "visual_features": f"SauceNAO match ({saucenao_result.get('index_name', '')})",
+                "reasoning": f"Matched via SauceNAO image search",
+                "anilist_id": str(anime_data.get("id", "")),
+                "tmdb_id": "",
+            }
+            logger.info(f"SauceNAO match: {ai_result['title']} ({ai_result['confidence']:.0%})")
+        elif sn_title:
+            ai_result = {
+                "type": "anime",
+                "title": sn_title,
+                "title_english": "",
+                "title_japanese": "",
+                "year": "",
+                "genre": [],
+                "studio": "",
+                "confidence": saucenao_result.get("similarity", 0.0),
+                "visual_features": f"SauceNAO: {saucenao_result.get('index_name', '')}",
+                "reasoning": f"Matched via SauceNAO ({saucenao_result.get('source_url', '')})",
+                "anilist_id": "",
+                "tmdb_id": "",
+            }
 
     if ai_result is None:
         ai_result = await analyze_frames(frames)
