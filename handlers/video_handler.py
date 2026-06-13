@@ -86,7 +86,7 @@ async def _identify_from_all_sources(tmp_path: str, frames: list[str]) -> tuple:
     ai_result = None
 
     trace_task = _run_trace_moe(tmp_path, frames)
-    saucenao_task = _run_saucenao(frames) if len(frames) >= 2 else asyncio.coroutine(lambda: None)()
+    saucenao_task = _run_saucenao(frames)
 
     trace_result, saucenao_result = await asyncio.gather(trace_task, saucenao_task, return_exceptions=True)
     if isinstance(trace_result, Exception):
@@ -102,7 +102,7 @@ async def _identify_from_all_sources(tmp_path: str, frames: list[str]) -> tuple:
     if trace_result and saucenao_result:
         trace_title = trace_result.get("anilist_info", {}).get("title", "") if isinstance(trace_result.get("anilist_info"), dict) else ""
         saucenao_title = saucenao_result.get("title", "")
-        if trace_title and saucenao_title and trace_title.lower() in saucenao_title.lower() or saucenao_title.lower() in trace_title.lower():
+        if trace_title and saucenao_title and (trace_title.lower() in saucenao_title.lower() or saucenao_title.lower() in trace_title.lower()):
             logger.info("trace.moe and SauceNAO agree, boosting confidence")
             trace_result["similarity"] = min(1.0, trace_result.get("similarity", 0) * 1.3)
 
