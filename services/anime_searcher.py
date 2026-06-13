@@ -134,4 +134,9 @@ async def search_anime_advanced(title: str, studio: str = None, year: int = None
         if result:
             return result
 
+    if year:
+        result = await search_anime(f"{title} {year}")
+        if result:
+            return result
+
     return None

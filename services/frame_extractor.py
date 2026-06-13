@@ -10,11 +10,63 @@ logger = logging.getLogger(__name__)
 TEMP_DIR = Path("data/temp")
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-
 from config import MAX_FRAMES, FRAME_INTERVAL
 
 
 async def extract_frames(video_path: str, max_frames: int = MAX_FRAMES, interval: int = FRAME_INTERVAL) -> list[str]:
+    frames = await _extract_scene_frames(video_path, max_frames)
+    if len(frames) >= 3:
+        return frames
+
+    logger.info(f"Scene detection got {len(frames)} frames, falling back to interval extraction")
+    return await _extract_interval_frames(video_path, max_frames, interval)
+
+
+async def _extract_scene_frames(video_path: str, max_frames: int) -> list[str]:
+    output_dir = TEMP_DIR / str(uuid.uuid4())
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    output_pattern = str(output_dir / "frame_%03d.jpg")
+
+    cmd = [
+        "ffmpeg",
+        "-i", video_path,
+        "-vf", f"select='gt(scene,0.3)',showinfo",
+        "-vframes", str(max_frames),
+        "-q:v", "2",
+        "-vsync", "vfr",
+        "-y",
+        output_pattern,
+    ]
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(),
+            timeout=30,
+        )
+        if process.returncode != 0:
+            logger.debug(f"ffmpeg scene detection exited with code {process.returncode}")
+    except asyncio.TimeoutError:
+        logger.error("ffmpeg scene detection timed out")
+        try:
+            process.kill()
+        except Exception:
+            pass
+        return []
+    except Exception as e:
+        logger.error(f"ffmpeg scene detection error: {e}")
+        return []
+
+    frames = sorted(output_dir.glob("frame_*.jpg"))
+    return [str(f) for f in frames]
+
+
+async def _extract_interval_frames(video_path: str, max_frames: int, interval: int) -> list[str]:
     output_dir = TEMP_DIR / str(uuid.uuid4())
     output_dir.mkdir(parents=True, exist_ok=True)
 

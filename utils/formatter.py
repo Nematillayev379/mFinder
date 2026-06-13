@@ -52,9 +52,10 @@ def format_anime(ai_result: dict, data: dict, lang: str) -> str:
             mal_link = link.get("url", "")
             break
     if not mal_link:
-        anilist_id = data.get("id")
-        if anilist_id:
-            mal_link = f"https://myanimelist.net/anime/{anilist_id}"
+        source = data.get("source", "")
+        mal_id = data.get("id")
+        if source == "jikan" and mal_id:
+            mal_link = f"https://myanimelist.net/anime/{mal_id}"
 
     msg = "🎬 <b>ANIME TOPILDI!</b>\n\n"
     msg += f"📌 <b>Nomi:</b> {escape(name)}\n"

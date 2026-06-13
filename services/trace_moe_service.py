@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import aiohttp
 from config import HTTP_TIMEOUT
@@ -5,7 +6,7 @@ from config import HTTP_TIMEOUT
 logger = logging.getLogger(__name__)
 
 TRACE_MOE_API = "https://api.trace.moe/search"
-SIMILARITY_THRESHOLD = 0.50
+SIMILARITY_THRESHOLD = 0.30
 
 
 async def search_anime_by_image(image_path: str) -> dict | None:
@@ -93,7 +94,6 @@ async def search_anime_by_image(image_path: str) -> dict | None:
 
 
 async def search_anime_by_video(video_path: str) -> dict | None:
-    """Video faylni to'g'ridan-to'g'ri trace.moe ga yuborish - aniqroq natija"""
     try:
         import os
         size = os.path.getsize(video_path)
@@ -164,3 +164,29 @@ async def search_anime_by_video(video_path: str) -> dict | None:
     except Exception as e:
         logger.debug(f"trace.moe video search: {type(e).__name__}: {e}")
         return None
+
+
+async def search_anime_by_images_parallel(image_paths: list[str]) -> dict | None:
+    if not image_paths:
+        return None
+
+    tasks = [search_anime_by_image(path) for path in image_paths[:6]]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    best = None
+    for r in results:
+        if isinstance(r, Exception):
+            logger.warning(f"trace.moe parallel search error: {r}")
+            continue
+        if r is None:
+            continue
+        if best is None or r.get("similarity", 0) > best.get("similarity", 0):
+            best = r
+
+    if best:
+        logger.info(
+            f"trace.moe (parallel): Best match from {len(image_paths)} frames - "
+            f"anilist_id={best.get('anilist_id')}, similarity={best.get('similarity', 0):.2%}"
+        )
+
+    return best

@@ -11,9 +11,10 @@ from utils.formatter import format_result
 from services.frame_extractor import extract_frames, cleanup_frames
 from services.vision_analyzer import analyze_frames
 from services.anime_searcher import search_anime_advanced, get_anime_by_id, search_anime
+from services.jikan_service import search_anime as jikan_search, get_anime_by_id as jikan_get_by_id, normalize_to_anilist_format
 from services.movie_searcher import search_movie, search_tv, get_movie_details, get_tv_details
 from services.video_downloader import is_video_url, extract_first_url, download_video
-from services.trace_moe_service import search_anime_by_image, search_anime_by_video
+from services.trace_moe_service import search_anime_by_image, search_anime_by_video, search_anime_by_images_parallel
 from services.saucenao_service import search_by_image as saucenao_search
 from services.cache_service import compute_hash, get_cached, set_cached, check_rate_limit
 from config import MAX_VIDEO_SIZE, RATE_LIMIT, MAX_CONCURRENT, MAX_MESSAGE_LENGTH, MAX_FRAMES, FRAME_INTERVAL
@@ -32,134 +33,37 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
         await status_msg.edit_text(get_message(lang, "not_found"))
         return []
 
-    trace_result = await search_anime_by_video(tmp_path)
+    trace_result, saucenao_result, ai_result = await _identify_from_all_sources(tmp_path, frames)
 
-    if not trace_result:
-        trace_result = await search_anime_by_image(frames[0])
-
-    if not trace_result and len(frames) > 1:
-        trace_result = await search_anime_by_image(frames[1])
-
-    if not trace_result and len(frames) > 2:
-        trace_result = await search_anime_by_image(frames[len(frames) // 2])
-
-    saucenao_result = None
-    if not trace_result:
-        for i in range(min(3, len(frames))):
-            saucenao_result = await saucenao_search(frames[i])
-            if saucenao_result:
-                break
-
-    ai_result = None
     anime_data = None
     movie_data = None
 
     if trace_result:
-        anilist_id = trace_result.get("anilist_id")
-        if anilist_id:
-            try:
-                anime_data = await get_anime_by_id(int(anilist_id))
-            except (ValueError, TypeError):
-                pass
+        anime_data = await _enrich_trace_result(trace_result)
 
-        if anime_data:
-            titles = anime_data.get("title", {}) or {}
-            ai_result = {
-                "type": "anime",
-                "title": titles.get("romaji") or titles.get("english") or titles.get("native") or "Unknown",
-                "title_english": titles.get("english") or "",
-                "title_japanese": titles.get("native") or "",
-                "year": str((anime_data.get("startDate") or {}).get("year") or ""),
-                "genre": anime_data.get("genres") or [],
-                "studio": "",
-                "confidence": trace_result.get("similarity", 0.0),
-                "visual_features": f"trace.moe match (similarity: {trace_result.get('similarity', 0):.0%})",
-                "reasoning": f"Episode {trace_result.get('episode', '?')} identified via frame matching",
-                "anilist_id": str(anilist_id),
-                "tmdb_id": "",
-                "episode": str(trace_result.get("episode") or ""),
-            }
-            logger.info(f"trace.moe match: {ai_result['title']} ({ai_result['confidence']:.0%})")
-        else:
-            trace_result = None
+    if not anime_data and saucenao_result:
+        anime_data = await _enrich_saucenao_result(saucenao_result)
 
-    if not ai_result and saucenao_result:
-        sn_title = saucenao_result.get("title", "")
-        if sn_title:
-            anime_data = await search_anime(sn_title)
-        if anime_data:
-            titles = anime_data.get("title", {}) or {}
-            ai_result = {
-                "type": "anime",
-                "title": titles.get("romaji") or titles.get("english") or titles.get("native") or sn_title,
-                "title_english": titles.get("english") or "",
-                "title_japanese": titles.get("native") or "",
-                "year": str((anime_data.get("startDate") or {}).get("year") or ""),
-                "genre": anime_data.get("genres") or [],
-                "studio": "",
-                "confidence": saucenao_result.get("similarity", 0.0),
-                "visual_features": f"SauceNAO match ({saucenao_result.get('index_name', '')})",
-                "reasoning": f"Matched via SauceNAO image search",
-                "anilist_id": str(anime_data.get("id", "")),
-                "tmdb_id": "",
-            }
-            logger.info(f"SauceNAO match: {ai_result['title']} ({ai_result['confidence']:.0%})")
-        elif sn_title:
-            ai_result = {
-                "type": "anime",
-                "title": sn_title,
-                "title_english": "",
-                "title_japanese": "",
-                "year": "",
-                "genre": [],
-                "studio": "",
-                "confidence": saucenao_result.get("similarity", 0.0),
-                "visual_features": f"SauceNAO: {saucenao_result.get('index_name', '')}",
-                "reasoning": f"Matched via SauceNAO ({saucenao_result.get('source_url', '')})",
-                "anilist_id": "",
-                "tmdb_id": "",
-            }
+    if not anime_data and ai_result:
+        anime_data, movie_data = await _enrich_ai_result(ai_result)
 
-    if ai_result is None:
-        ai_result = await analyze_frames(frames)
+    if not anime_data and not movie_data:
+        if ai_result:
+            media_type = ai_result.get("type", "unknown")
+            if media_type in ("movie", "series"):
+                title = ai_result.get("title", "")
+                if title and title != "Unknown":
+                    if media_type == "series":
+                        search_result = await search_tv(title)
+                        if search_result:
+                            movie_data = await get_tv_details(search_result["id"])
+                    else:
+                        search_result = await search_movie(title)
+                        if search_result:
+                            movie_data = await get_movie_details(search_result["id"])
 
-    media_type = ai_result.get("type", "unknown")
-    title = ai_result.get("title", "")
-    confidence = ai_result.get("confidence", 0)
-    search_terms = ai_result.get("search_terms", "")
-
-    if media_type == "anime" and not anime_data:
-        anilist_id = ai_result.get("anilist_id")
-        if anilist_id:
-            try:
-                anime_data = await get_anime_by_id(int(anilist_id))
-            except (ValueError, TypeError):
-                pass
-        if not anime_data:
-            anime_data = await search_anime_advanced(
-                title,
-                studio=ai_result.get("studio"),
-                year=ai_result.get("year"),
-            )
-        if not anime_data and confidence < 0.5 and search_terms:
-            logger.info(f"Low confidence ({confidence:.2f}), trying search_terms: {search_terms}")
-            anime_data = await search_anime(search_terms)
-        if not anime_data and confidence < 0.5 and title and title != "Unknown":
-            logger.info(f"Trying alternative search with title: {title}")
-            anime_data = await search_anime(title)
-
-    elif media_type in ("movie", "series") and not movie_data:
-        if media_type == "series":
-            search_result = await search_tv(title)
-            if search_result:
-                movie_data = await get_tv_details(search_result["id"])
-        else:
-            search_result = await search_movie(title)
-            if search_result:
-                movie_data = await get_movie_details(search_result["id"])
-
-    if not anime_data and not movie_data and ai_result.get("type") == "unknown":
-        pass
+    if not ai_result:
+        ai_result = {"type": "unknown", "title": "Unknown", "confidence": 0.0}
 
     result_text = format_result(ai_result, anime_data, movie_data, lang)
 
@@ -174,6 +78,160 @@ async def _process_video_file(message: Message, status_msg, tmp_path: str, user_
             await message.answer(chunk, parse_mode="HTML")
 
     return frames
+
+
+async def _identify_from_all_sources(tmp_path: str, frames: list[str]) -> tuple:
+    trace_result = None
+    saucenao_result = None
+    ai_result = None
+
+    trace_task = _run_trace_moe(tmp_path, frames)
+    saucenao_task = _run_saucenao(frames) if len(frames) >= 2 else asyncio.coroutine(lambda: None)()
+
+    trace_result, saucenao_result = await asyncio.gather(trace_task, saucenao_task, return_exceptions=True)
+    if isinstance(trace_result, Exception):
+        logger.warning(f"trace.moe error: {trace_result}")
+        trace_result = None
+    if isinstance(saucenao_result, Exception):
+        logger.warning(f"SauceNAO error: {saucenao_result}")
+        saucenao_result = None
+
+    if not trace_result and not saucenao_result:
+        ai_result = await analyze_frames(frames)
+
+    if trace_result and saucenao_result:
+        trace_title = trace_result.get("anilist_info", {}).get("title", "") if isinstance(trace_result.get("anilist_info"), dict) else ""
+        saucenao_title = saucenao_result.get("title", "")
+        if trace_title and saucenao_title and trace_title.lower() in saucenao_title.lower() or saucenao_title.lower() in trace_title.lower():
+            logger.info("trace.moe and SauceNAO agree, boosting confidence")
+            trace_result["similarity"] = min(1.0, trace_result.get("similarity", 0) * 1.3)
+
+    return trace_result, saucenao_result, ai_result
+
+
+async def _run_trace_moe(tmp_path: str, frames: list[str]) -> dict | None:
+    result = await search_anime_by_video(tmp_path)
+
+    if not result and len(frames) >= 2:
+        parallel_frames = frames[:min(6, len(frames))]
+        result = await search_anime_by_images_parallel(parallel_frames)
+
+    if not result and frames:
+        result = await search_anime_by_image(frames[0])
+
+    return result
+
+
+async def _run_saucenao(frames: list[str]) -> dict | None:
+    saucenao_tasks = [saucenao_search(frames[i]) for i in range(min(5, len(frames)))]
+    saucenao_results = await asyncio.gather(*saucenao_tasks, return_exceptions=True)
+    for r in saucenao_results:
+        if isinstance(r, dict) and r is not None:
+            return r
+    return None
+
+
+async def _enrich_trace_result(trace_result: dict) -> dict | None:
+    anilist_id = trace_result.get("anilist_id")
+    if not anilist_id:
+        return None
+
+    try:
+        anime_data = await get_anime_by_id(int(anilist_id))
+        if anime_data:
+            return anime_data
+    except (ValueError, TypeError):
+        pass
+
+    try:
+        jikan_data = await jikan_get_by_id(int(anilist_id))
+        if jikan_data:
+            return normalize_to_anilist_format(jikan_data)
+    except (ValueError, TypeError):
+        pass
+
+    return None
+
+
+async def _enrich_saucenao_result(saucenao_result: dict) -> dict | None:
+    sn_title = saucenao_result.get("title", "")
+    if not sn_title:
+        return None
+
+    anime_data = await search_anime(sn_title)
+    if anime_data:
+        return anime_data
+
+    jikan_data = await jikan_search(sn_title)
+    if jikan_data:
+        return normalize_to_anilist_format(jikan_data)
+
+    return None
+
+
+async def _enrich_ai_result(ai_result: dict) -> tuple[dict | None, dict | None]:
+    anime_data = None
+    movie_data = None
+
+    media_type = ai_result.get("type", "unknown")
+    title = ai_result.get("title", "")
+    confidence = ai_result.get("confidence", 0)
+    search_terms = ai_result.get("search_terms", "")
+
+    if media_type == "anime":
+        anilist_id = ai_result.get("anilist_id")
+        if anilist_id:
+            try:
+                anime_data = await get_anime_by_id(int(anilist_id))
+            except (ValueError, TypeError):
+                pass
+            if not anime_data:
+                try:
+                    jikan_data = await jikan_get_by_id(int(anilist_id))
+                    if jikan_data:
+                        anime_data = normalize_to_anilist_format(jikan_data)
+                except (ValueError, TypeError):
+                    pass
+
+        if not anime_data:
+            anime_data = await search_anime_advanced(
+                title,
+                studio=ai_result.get("studio"),
+                year=ai_result.get("year"),
+            )
+
+        if not anime_data and title and title != "Unknown":
+            jikan_data = await jikan_search(title)
+            if jikan_data:
+                anime_data = normalize_to_anilist_format(jikan_data)
+
+        if not anime_data and confidence < 0.5 and search_terms:
+            logger.info(f"Low confidence ({confidence:.2f}), trying search_terms: {search_terms}")
+            anime_data = await search_anime(search_terms)
+            if not anime_data:
+                jikan_data = await jikan_search(search_terms)
+                if jikan_data:
+                    anime_data = normalize_to_anilist_format(jikan_data)
+
+        if not anime_data and confidence < 0.5 and title and title != "Unknown":
+            logger.info(f"Trying alternative search with title: {title}")
+            anime_data = await search_anime(title)
+            if not anime_data:
+                jikan_data = await jikan_search(title)
+                if jikan_data:
+                    anime_data = normalize_to_anilist_format(jikan_data)
+
+    elif media_type in ("movie", "series"):
+        if media_type == "series":
+            search_result = await search_tv(title)
+            if search_result:
+                movie_data = await get_tv_details(search_result["id"])
+        else:
+            search_result = await search_movie(title)
+            if search_result:
+                movie_data = await get_movie_details(search_result["id"])
+
+    return anime_data, movie_data
 
 
 @router.message(F.video | F.video_note | F.animation)

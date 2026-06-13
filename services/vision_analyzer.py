@@ -35,8 +35,7 @@ def _get_all_models():
     if "gemini" in clients:
         models.append(("gemini", "gemini-2.0-flash"))
     if "groq" in clients:
-        for m in VISION_MODELS:
-            models.append(("groq", m))
+        models.append(("groq", GROQ_MODEL))
     return models
 
 
@@ -57,7 +56,7 @@ def _load_images(frame_paths: list[str], limit: int = MAX_FRAMES) -> list[dict]:
     return images
 
 
-async def _try_model(provider: str, model_name: str, messages: list, max_tokens: int, temperature: float = 0.2) -> str | None:
+async def _try_model(provider: str, model_name: str, messages: list, max_tokens: int, temperature: float = 0.0) -> str | None:
     client = clients.get(provider)
     if not client:
         return None
@@ -81,35 +80,58 @@ async def _try_model(provider: str, model_name: str, messages: list, max_tokens:
 
 
 async def _step1_describe(images: list[dict]) -> dict | None:
-    prompt = """Analyze these video frames. Describe ONLY what you see visually. DO NOT name any anime/movie/series.
+    prompt = """Analyze these video frames and describe ONLY what you see visually. DO NOT name any anime, movie, or series.
 
-Describe in detail:
-1. CHARACTERS: hair color, length, style, eye color, clothing, accessories, weapons
-2. SETTING: indoor/outdoor, medieval/modern/sci-fi/fantasy, buildings, landscape
-3. ART STYLE: animation quality, color palette, 2D/3D/CGI
-4. DISTINCTIVE FEATURES: creatures, magic effects, vehicles, technology
-5. TEXT: any visible text, signs, logos (include language)
-6. OBJECTS: weapons, items, nature elements
-7. MOOD: dark/bright/action/comedy/drama
+Be EXTREMELY specific and detailed about:
+
+1. CHARACTERS:
+   - Hair: exact color (not just "dark" but "navy blue", "crimson red", "platinum blonde"), length (short/medium/long/very long), style (spiky/flowing/ponytail/braided/bob)
+   - Eyes: exact color, shape (sharp/round/narrow), expression
+   - Clothing: color, style (school uniform/suit/casual/fantasy armor), specific details (ribbon, tie, cape)
+   - Accessories: weapons, jewelry, glasses, scars, distinctive marks
+   - Age appearance: child/teen/adult
+
+2. SETTING:
+   - Location: school/classroom/castle/forest/city/space/underwater
+   - Time: daytime/night/sunset/dawn
+   - Architecture: Japanese/Western/medieval/modern/futuristic
+   - Weather: clear/rainy/snowy/cloudy
+
+3. ART STYLE:
+   - Quality: high budget/low budget/CGI
+   - Color palette: warm/cool/dark/bright/pastel/vibrant
+   - Distinctive style: realistic/chibi/moe/realistic proportions
+
+4. DISTINCTIVE FEATURES:
+   - Any unique creatures, magic effects, technology
+   - Special abilities, transformations, auras
+   - Vehicles, mecha, weapons
+
+5. TEXT (if any):
+   - Any visible text, signs, logos, titles
+   - Language (Japanese/English/other)
+
+6. COMPOSITION:
+   - Number of characters visible
+   - Action scene vs dialogue scene
+   - Camera angle (close-up/medium/wide)
 
 Respond in EXACT JSON:
 {
-    "characters": "detailed character description",
-    "setting": "detailed setting description",
-    "art_style": "animation style",
-    "distinctive_features": "unique elements",
+    "characters": "extremely detailed character descriptions",
+    "setting": "detailed setting and environment",
+    "art_style": "animation style and quality",
+    "distinctive_features": "unique elements and effects",
     "visible_text": "any text or 'none'",
-    "objects": "notable objects",
-    "mood": "overall mood",
+    "objects": "notable objects and items",
+    "mood": "overall atmosphere",
     "era_indicator": "time period suggested"
-}
-
-Be EXTREMELY specific about colors, shapes, and details."""
+}"""
 
     messages = [{"role": "user", "content": [{"type": "text", "text": prompt}, *images]}]
 
     for provider, model in _get_all_models():
-        text = await _try_model(provider, model, messages, 800, 0.1)
+        text = await _try_model(provider, model, messages, 800, 0.0)
         if text:
             try:
                 j_start = text.find("{")
@@ -131,17 +153,21 @@ async def _step2_identify(images: list[dict], features: dict) -> dict | None:
 VISUAL FEATURES:
 {feature_text}
 
-RULES:
+CRITICAL RULES - FOLLOW EXACTLY:
 1. Match ALL features to a specific anime/movie. Do NOT guess randomly.
 2. ALL features should match, not just 1-2.
-3. NEVER say "Attack on Titan" unless you see: 3D maneuvering gear, vertical cables, Wall Maria/Rose/Sina, Titan shifters, Survey Corps green cloaks.
-4. If unsure, describe what genre/type it is and set confidence below 0.4.
+3. NEVER guess popular anime unless ALL features match perfectly.
+4. NEVER say "Attack on Titan" unless you see: 3D maneuvering gear, vertical cables, Wall Maria/Rose/Sina, Titan shifters, Survey Corps green cloaks.
+5. NEVER say "Naruto" unless you see: orange jumpsuit, headband with leaf symbol, whisker marks, blonde spiky hair.
+6. NEVER say "One Piece" unless you see: straw hat, scars, pirate outfits, Devil Fruit powers.
+7. NEVER say "Dragon Ball" unless you see: spiky black hair, orange gi, ki blasts, Saiyan tails.
+8. If features don't clearly match any specific anime, describe the genre/type and set confidence below 0.3.
 
 IDENTIFICATION STEPS:
-A) What genre is this? (isekai, school, mecha, shonen, etc.)
-B) What era/time period? (medieval, modern, Taisho, sci-fi, etc.)
-C) What are the most distinctive visual elements?
-D) Which specific anime/movie matches ALL these features?
+A) What genre is this? (isekai, school, mecha, shonen, slice-of-life, fantasy, sci-fi, etc.)
+B) What era/time period? (medieval, modern, Taisho, sci-fi future, etc.)
+C) What are the most distinctive visual elements that make this unique?
+D) Which specific anime/movie matches ALL these features? (If unsure, say "Unknown")
 
 Respond in EXACT JSON:
 {{
@@ -149,7 +175,7 @@ Respond in EXACT JSON:
     "genre_guess": "specific genre",
     "era_guess": "time period",
     "distinctive_elements": "most unique features you see",
-    "title": "Title ONLY if features CLEARLY match",
+    "title": "Title ONLY if features CLEARLY match, otherwise 'Unknown'",
     "title_english": "English title",
     "title_japanese": "Japanese title",
     "year": "Release year",
@@ -162,12 +188,12 @@ Respond in EXACT JSON:
     "search_terms": "keywords for database search if confidence < 0.5"
 }}
 
-If confidence < 0.4, set title to your best guess but provide search_terms for fallback."""
+If confidence < 0.3, set title to 'Unknown' and provide search_terms for fallback."""
 
     messages = [{"role": "user", "content": [{"type": "text", "text": prompt}, *images]}]
 
     for provider, model in _get_all_models():
-        text = await _try_model(provider, model, messages, 1200, 0.1)
+        text = await _try_model(provider, model, messages, 1200, 0.0)
         if text:
             try:
                 j_start = text.find("{")
@@ -201,16 +227,29 @@ async def analyze_frames(frame_paths: list[str]) -> dict:
         logger.warning("Step 2 failed, trying single-step")
         return await _single_step(images)
 
+    if result.get("confidence", 0) < 0.3:
+        logger.warning(f"Low confidence ({result.get('confidence', 0):.2f}), adding search_terms")
+        if not result.get("search_terms"):
+            result["search_terms"] = " ".join([
+                features.get("art_style", ""),
+                features.get("era_indicator", ""),
+                features.get("distinctive_features", ""),
+            ]).strip()
+
     result["visual_features"] = features.get("characters", "") + " | " + features.get("setting", "")
     return result
 
 
 async def _single_step(images: list[dict]) -> dict:
     prompt = """Identify the anime/movie in these frames.
-- DO NOT guess popular anime unless features match exactly
-- If unsure, describe features and set confidence below 0.4
 
-JSON:
+CRITICAL RULES:
+- DO NOT guess popular anime unless ALL features match exactly
+- NEVER say "Attack on Titan", "Naruto", "One Piece", or "Dragon Ball" unless you see their EXACT distinctive features
+- If unsure, describe features and set confidence below 0.3
+- It's better to say "Unknown" than to guess incorrectly
+
+Respond in EXACT JSON:
 {
     "type": "anime" or "movie" or "series",
     "title": "Title or 'Unknown'",
@@ -230,7 +269,7 @@ JSON:
     messages = [{"role": "user", "content": [{"type": "text", "text": prompt}, *images]}]
 
     for provider, model in _get_all_models():
-        text = await _try_model(provider, model, messages, 1000, 0.1)
+        text = await _try_model(provider, model, messages, 1000, 0.0)
         if text:
             try:
                 j_start = text.find("{")
